@@ -235,13 +235,28 @@ public final class Cursor {
                 upcallArena
             );
 
+            // Save previous values for re-entrant (nested) visitChildren calls.
+            // SourceParser nests visitors: outer callback -> parseStruct -> inner visitChildren.
+            // Without save/restore, the inner finally block would remove() the ThreadLocal
+            // values that the outer callback still needs, causing a null dereference.
+            CursorVisitor previousVisitor = CURRENT_VISITOR.get();
+            Arena previousArena = CURRENT_ARENA.get();
             CURRENT_VISITOR.set(visitor);
             CURRENT_ARENA.set(this.arena);
             try {
                 LibClang.visitChildren(this.segment, stub, MemorySegment.NULL);
             } finally {
-                CURRENT_VISITOR.remove();
-                CURRENT_ARENA.remove();
+                // Restore previous values (not remove!) so outer callbacks keep working
+                if (previousVisitor != null) {
+                    CURRENT_VISITOR.set(previousVisitor);
+                } else {
+                    CURRENT_VISITOR.remove();
+                }
+                if (previousArena != null) {
+                    CURRENT_ARENA.set(previousArena);
+                } else {
+                    CURRENT_ARENA.remove();
+                }
             }
         }
     }
