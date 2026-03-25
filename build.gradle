@@ -34,9 +34,16 @@ else {
 }
 //----------------------END "DO NOT MODIFY" SECTION-------------------------------
 
-// Override Ghidra's default JDK 21 target — Panama FFI requires JDK 22+
+// Panama FFI (java.lang.foreign) is preview in JDK 21, stable in JDK 22+.
+// Use release 21 with --enable-preview when JDK 22+ is not available.
 compileJava {
-	options.release = 22
+	def jdkVersion = JavaVersion.current().majorVersion.toInteger()
+	if (jdkVersion >= 22) {
+		options.release = 22
+	} else {
+		options.release = 21
+		options.compilerArgs += ['--enable-preview']
+	}
 }
 
 def DISTRIBUTION_DIR = file("dist")
