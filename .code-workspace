@@ -1,0 +1,45 @@
+{
+    "folders": [
+        {
+            "path": "."
+        }
+    ],
+    "settings": {
+        // Java configuration — JDT Language Server
+        // Machine-specific Java paths are intentionally omitted here so the
+        // workspace file stays cross-platform. This project requires Java 21.
+        //
+        // IMPORTANT: JAVA_HOME may point to a different version (e.g. Java 25).
+        // If JDT LS picks up the wrong JDK, create .vscode/settings.json (gitignored)
+        // with the following overrides pointing explicitly to your Java 21 installation:
+        //
+        //   {
+        //       "java.jdt.ls.java.home": "/path/to/java-21",
+        //       "java.import.gradle.java.home": "/path/to/java-21",
+        //       "java.configuration.runtimes": [
+        //           {
+        //               "name": "JavaSE-21",
+        //               "path": "/path/to/java-21",
+        //               "default": true
+        //           }
+        //       ],
+        //   }
+        "java.compile.nullAnalysis.mode": "automatic",
+
+        // Gradle configuration
+        "java.import.gradle.wrapper.enabled": true,
+        "java.import.gradle.annotationProcessing.enabled": false,
+        "java.configuration.updateBuildConfiguration": "automatic",
+        "gradle.nestedProjects": false,
+
+        // Editor settings for this project
+        "editor.tabSize": 4,
+        "editor.insertSpaces": true
+    },
+    "extensions": {
+        "recommendations": [
+            "vscjava.vscode-java-pack",
+            "davidanson.vscode-markdownlint"
+        ]
+    }
+}
