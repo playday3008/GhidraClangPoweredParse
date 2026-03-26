@@ -117,3 +117,64 @@ task createDistribution (type: Zip) {
 		println "\nCreated ${archiveBaseName.get()}.${archiveExtension.get()} in ${destinationDirectory.get()}"
 	}
 }
+
+// Per-platform distribution: one ZIP per platform with only that platform's native library
+def platforms = ['linux_x86_64', 'linux_arm_64', 'mac_x86_64', 'mac_arm_64', 'win_x86_64', 'win_arm_64']
+
+platforms.each { platform ->
+	task "createDistribution_${platform}" (type: Zip) {
+		archiveBaseName = "${project.name}-${project.version}-${getGitHash()}-Ghidra_${ghidra_version}-${platform}".replace(' ', '_')
+		archiveExtension = 'zip'
+		destinationDirectory = DISTRIBUTION_DIR
+		archiveVersion = ''
+		duplicatesStrategy = 'exclude'
+
+		File propFile = new File(project.projectDir, "extension.properties")
+		from (propFile) {
+			String version = "${ghidra_version}"
+			String name = "${project.name}"
+			filter (ReplaceTokens, tokens: [extversion: version])
+			filter (ReplaceTokens, tokens: [extname: name])
+			into PATH_IN_ZIP
+		}
+
+		from (project.jar) {
+			into PATH_IN_ZIP + "/lib"
+		}
+
+		from (project.projectDir) {
+			exclude 'build/**'
+			exclude '*.gradle'
+			exclude 'gradle.properties'
+			exclude 'certification.manifest'
+			exclude 'dist/**'
+			exclude 'bin/**'
+			exclude 'src/**'
+			exclude '.gradle/**'
+			exclude 'gradle/**'
+			exclude 'gradlew'
+			exclude 'gradlew.bat'
+			exclude '.classpath'
+			exclude '.project'
+			exclude '.settings/**'
+			exclude 'developer_scripts'
+			exclude '.antProperties.xml'
+			exclude 'eclipse/**'
+			// Exclude all other platforms' native libraries
+			platforms.findAll { it != platform }.each { other ->
+				exclude "os/${other}/**"
+			}
+
+			into PATH_IN_ZIP
+		}
+
+		doLast {
+			println "\nCreated ${archiveBaseName.get()}.${archiveExtension.get()} in ${destinationDirectory.get()}"
+		}
+	}
+}
+
+task createPlatformDistributions {
+	description = 'Creates per-platform distribution ZIPs'
+	dependsOn platforms.collect { "createDistribution_${it}" }
+}

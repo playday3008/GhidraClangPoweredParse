@@ -1,5 +1,6 @@
 package playday3008.gcpp.clang;
 
+import java.io.File;
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
 import java.nio.file.DirectoryStream;
@@ -8,6 +9,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+
+import ghidra.framework.Application;
+import ghidra.framework.Platform;
 
 /**
  * Static utility class providing all native interactions with libclang via Panama FFI.
@@ -75,6 +79,16 @@ public final class LibClang {
     }
 
     private static SymbolLookup loadLibClang() {
+        // Try bundled library first (in extension's os/<platform>/ directory)
+        try {
+            File osFile = Application.getOSFile(
+                "libclang" + Platform.CURRENT_PLATFORM.getLibraryExtension());
+            return SymbolLookup.libraryLookup(osFile.toPath(), Arena.global());
+        } catch (Exception ignored) {
+            // Bundled library not found or not loadable — fall through to system search
+        }
+
+        // Fall back to system-installed libclang
         String osName = System.getProperty("os.name", "").toLowerCase();
 
         if (osName.contains("win")) {

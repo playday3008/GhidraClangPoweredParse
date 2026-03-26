@@ -1,0 +1,142 @@
+name: Build libclang
+
+on:
+  workflow_dispatch:
+    inputs:
+      llvm_version:
+        description: 'LLVM version tag (e.g. 22.1.0)'
+        required: true
+        default: '22.1.0'
+
+env:
+  LLVM_VERSION: ${{ github.event.inputs.llvm_version || '22.1.0' }}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux_x86_64
+            lib_name: libclang.so
+            lib_dir: build/lib
+            strip_cmd: strip --strip-unneeded
+            cmake_extra: >-
+              -DLLVM_ENABLE_PIC=ON
+          - os: ubuntu-24.04-arm
+            platform: linux_arm_64
+            lib_name: libclang.so
+            lib_dir: build/lib
+            strip_cmd: strip --strip-unneeded
+            cmake_extra: >-
+              -DLLVM_ENABLE_PIC=ON
+          - os: macos-26-intel
+            platform: mac_x86_64
+            lib_name: libclang.dylib
+            lib_dir: build/lib
+            strip_cmd: strip -x
+            cmake_extra: ''
+          - os: macos-26
+            platform: mac_arm_64
+            lib_name: libclang.dylib
+            lib_dir: build/lib
+            strip_cmd: strip -x
+            cmake_extra: ''
+          - os: windows-2025
+            platform: win_x86_64
+            lib_name: libclang.dll
+            lib_dir: build/bin
+            strip_cmd: ''
+            cmake_extra: >-
+              -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+          - os: windows-11-arm
+            platform: win_arm_64
+            lib_name: libclang.dll
+            lib_dir: build/bin
+            strip_cmd: ''
+            cmake_extra: >-
+              -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.platform }}
+
+    steps:
+      - name: Clone LLVM source
+        shell: bash
+        run: git clone --depth 1 --branch "llvmorg-${LLVM_VERSION}" https://github.com/llvm/llvm-project.git llvm-project
+
+      - name: Configure libclang
+        shell: bash
+        run: |
+          cmake -G Ninja \
+            -S llvm-project/llvm \
+            -B build \
+            -DCMAKE_BUILD_TYPE=MinSizeRel \
+            -DLLVM_ENABLE_PROJECTS="clang" \
+            -DLLVM_TARGETS_TO_BUILD="" \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DLLVM_BUILD_TOOLS=OFF \
+            -DLLVM_BUILD_UTILS=OFF \
+            -DLLVM_BUILD_EXAMPLES=OFF \
+            -DLLVM_INCLUDE_TESTS=OFF \
+            -DLLVM_INCLUDE_BENCHMARKS=OFF \
+            -DLLVM_INCLUDE_DOCS=OFF \
+            -DLLVM_ENABLE_BINDINGS=OFF \
+            -DLLVM_ENABLE_Z3_SOLVER=OFF \
+            -DLLVM_ENABLE_ZLIB=OFF \
+            -DLLVM_ENABLE_ZSTD=OFF \
+            -DLLVM_ENABLE_LIBXML2=OFF \
+            -DLLVM_ENABLE_TERMINFO=OFF \
+            -DLLVM_ENABLE_LIBEDIT=OFF \
+            -DCLANG_BUILD_TOOLS=OFF \
+            -DCLANG_ENABLE_ARCMT=OFF \
+            -DCLANG_ENABLE_STATIC_ANALYZER=OFF \
+            ${{ matrix.cmake_extra }}
+
+      - name: Build libclang
+        shell: bash
+        run: cmake --build build --target libclang
+
+      - name: Strip library (Unix)
+        if: matrix.strip_cmd != ''
+        shell: bash
+        run: ${{ matrix.strip_cmd }} ${{ matrix.lib_dir }}/${{ matrix.lib_name }}
+
+      - name: Verify dependencies (Linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        shell: bash
+        run: |
+          echo "=== Dependencies ==="
+          ldd ${{ matrix.lib_dir }}/${{ matrix.lib_name }}
+          echo "=== Size ==="
+          ls -lh ${{ matrix.lib_dir }}/${{ matrix.lib_name }}
+
+      - name: Verify dependencies (macOS)
+        if: startsWith(matrix.os, 'macos')
+        shell: bash
+        run: |
+          echo "=== Dependencies ==="
+          otool -L ${{ matrix.lib_dir }}/${{ matrix.lib_name }}
+          echo "=== Size ==="
+          ls -lh ${{ matrix.lib_dir }}/${{ matrix.lib_name }}
+
+      - name: Verify dependencies (Windows)
+        if: startsWith(matrix.os, 'windows')
+        shell: bash
+        run: |
+          echo "=== Dependencies ==="
+          llvm-objdump -p ${{ matrix.lib_dir }}/${{ matrix.lib_name }} | grep "DLL Name"
+          echo "=== Size ==="
+          ls -lh ${{ matrix.lib_dir }}/${{ matrix.lib_name }}
+
+      - name: Ad-hoc sign (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: codesign --force --sign - ${{ matrix.lib_dir }}/${{ matrix.lib_name }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: libclang-${{ matrix.platform }}
+          path: ${{ matrix.lib_dir }}/${{ matrix.lib_name }}
+          if-no-files-found: error
