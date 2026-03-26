@@ -1,7 +1,6 @@
 package playday3008.gcpp.clang;
 
 import java.lang.foreign.Arena;
-import java.lang.foreign.Linker;
 import java.lang.foreign.MemorySegment;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -268,6 +267,7 @@ public final class Cursor {
      * CRITICAL: Catches ALL Throwable to prevent JVM termination from uncaught
      * exceptions in upcall stubs.
      */
+    @SuppressWarnings("unused") // Invoked via MethodHandles.lookup().findStatic() in visitChildren()
     private static int visitChildrenCallback(MemorySegment cursorSeg,
                                              MemorySegment parentSeg,
                                              MemorySegment clientData) {

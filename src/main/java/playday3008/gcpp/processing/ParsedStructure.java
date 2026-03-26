@@ -1,7 +1,6 @@
 package playday3008.gcpp.processing;
 
 import ghidra.program.model.data.*;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -32,7 +31,9 @@ public class ParsedStructure extends ParsedType {
     public DataType createDataType(TypePool pool) {
         var struct = new StructureDataType(getCategoryPath(), getName(), 0, pool.getDataTypeManager());
         struct.setPackingEnabled(true);
-        if (explicitPackValue > 0) {
+        if (isPacked) {
+            struct.setExplicitPackingValue(1);
+        } else if (explicitPackValue > 0) {
             struct.setExplicitPackingValue(explicitPackValue);
         }
 
