@@ -87,6 +87,20 @@ public class SourceParser {
         // causing hundreds of "undeclared identifier 'Name'" errors. Force macro-based SAL.
         args.add("-D_USE_ATTRIBUTES_FOR_SAL=0");
 
+        // Windows SDK-specific defines to improve header compatibility.
+        // Detect MSVC target from the args list (ArchitectureMapping sets --target=...-windows-msvc).
+        if (args.stream().anyMatch(a -> a.contains("windows-msvc"))) {
+            // Use C-style COM interfaces instead of C++ class inheritance.
+            // Avoids "expected class name" errors from unresolved base classes (IUnknown etc.)
+            // and produces struct definitions with explicit vtable pointers — more useful for RE.
+            args.add("-DCINTERFACE");
+            args.add("-DCOBJMACROS");
+            // ntlsa.h and ntsecapi.h both define LSA types (POLICY_AUDIT_EVENT_TYPE, etc.)
+            // MSVC allows identical struct redefinitions; clang doesn't. Setting _NTLSA_
+            // tells ntsecapi.h that ntlsa.h was already included, preventing duplicates.
+            args.add("-D_NTLSA_");
+        }
+
         List<String> diagnostics = new ArrayList<>();
 
         try (var index = Index.create(true);

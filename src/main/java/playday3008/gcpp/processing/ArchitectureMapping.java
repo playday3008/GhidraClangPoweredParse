@@ -108,7 +108,13 @@ public class ArchitectureMapping
     public enum TargetEnvironment
     {
         LINUX  ("unknown", "linux-gnu",    List.of("-fgnuc-version=12.0.0")),
-        WINDOWS("pc",      "windows-msvc", List.of("-fms-extensions", "-fms-compatibility", "-fdeclspec")),
+        WINDOWS("pc",      "windows-msvc", List.of(
+            "-fms-extensions", "-fms-compatibility", "-fdeclspec",
+            // Match MSVC 2022 17.10 — enables proper typedef redefinition tolerance
+            // and MSVC-specific parsing behaviors (e.g. enum forward declarations)
+            "-fms-compatibility-version=19.40",
+            "-fdelayed-template-parsing"
+        )),
         MACOS  ("apple",   "darwin",       List.of("-fgnuc-version=12.0.0"));
 
         private final String vendor;
