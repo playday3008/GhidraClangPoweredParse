@@ -7,9 +7,16 @@ on:
         description: 'LLVM version tag (e.g. 22.1.0)'
         required: true
         default: '22.1.0'
+  workflow_call:
+    inputs:
+      llvm_version:
+        description: 'LLVM version tag (e.g. 22.1.0)'
+        required: false
+        type: string
+        default: '22.1.0'
 
 env:
-  LLVM_VERSION: ${{ github.event.inputs.llvm_version || '22.1.0' }}
+  LLVM_VERSION: ${{ inputs.llvm_version || '22.1.0' }}
 
 jobs:
   build:

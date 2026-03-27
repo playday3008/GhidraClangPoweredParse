@@ -1,0 +1,125 @@
+name: Build Plugin
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ghidra_version:
+        description: 'Ghidra version (e.g. 12.0.4). Leave empty for latest.'
+        required: false
+        default: ''
+      llvm_version:
+        description: 'LLVM version tag (e.g. 22.1.0)'
+        required: false
+        default: '22.1.0'
+
+jobs:
+  build-libclang:
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/build-libclang.yml
+    with:
+      llvm_version: ${{ inputs.llvm_version || '22.1.0' }}
+
+  build-plugin:
+    needs: build-libclang
+    if: ${{ always() && !failure() && !cancelled() }}
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download libclang artifacts
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/download-artifact@v8
+        with:
+          pattern: libclang-*
+          path: libclang-artifacts
+
+      - name: Replace bundled libclang binaries
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          for platform in linux_x86_64 linux_arm_64 mac_x86_64 mac_arm_64 win_x86_64 win_arm_64; do
+            src="libclang-artifacts/libclang-${platform}"
+            if [ -d "$src" ]; then
+              mkdir -p "os/${platform}"
+              cp -v "$src"/* "os/${platform}/"
+            else
+              echo "::warning::No libclang artifact for ${platform}"
+            fi
+          done
+
+      - name: Determine Ghidra version
+        id: ghidra
+        shell: bash
+        run: |
+          requested="${{ inputs.ghidra_version }}"
+          if [ -n "$requested" ]; then
+            echo "version=${requested}" >> "$GITHUB_OUTPUT"
+          else
+            tag=$(curl -sL \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${{ github.token }}" \
+              "https://api.github.com/repos/NationalSecurityAgency/ghidra/releases/latest" \
+              | jq -r '.tag_name')
+            # Tag format: Ghidra_12.0.4_build
+            version=$(echo "$tag" | sed 's/Ghidra_//; s/_build//')
+            echo "version=${version}" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Ghidra version: $(grep version "$GITHUB_OUTPUT" | cut -d= -f2)"
+
+      - name: Download Ghidra
+        shell: bash
+        run: |
+          version="${{ steps.ghidra.outputs.version }}"
+          mkdir -p /tmp/ghidra-dl
+
+          asset_url=$(curl -sL \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            "https://api.github.com/repos/NationalSecurityAgency/ghidra/releases/tags/Ghidra_${version}_build" \
+            | jq -r '.assets[] | select(.name | test("^ghidra_.*PUBLIC.*\\.zip$")) | .browser_download_url')
+
+          echo "Downloading ${asset_url}"
+          curl -sL -o /tmp/ghidra-dl/ghidra.zip "$asset_url"
+
+          unzip -q /tmp/ghidra-dl/ghidra.zip -d /tmp/ghidra
+
+          ghidra_dir=$(find /tmp/ghidra -maxdepth 1 -type d -name "ghidra_*" | head -1)
+          echo "GHIDRA_INSTALL_DIR=${ghidra_dir}" >> "$GITHUB_ENV"
+          echo "Ghidra installed at ${ghidra_dir}"
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Build plugin
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ./gradlew createDistribution createPlatformDistributions
+          else
+            ./gradlew createDistribution
+          fi
+
+      - name: Upload universal distribution
+        uses: actions/upload-artifact@v7
+        with:
+          name: plugin-universal
+          path: dist/*Ghidra_${{ steps.ghidra.outputs.version }}.zip
+          if-no-files-found: error
+
+      - name: Upload platform distributions
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v7
+        with:
+          name: plugin-platform-distributions
+          path: dist/*Ghidra_${{ steps.ghidra.outputs.version }}-*.zip
+          if-no-files-found: error
