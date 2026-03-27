@@ -24,6 +24,8 @@ import ghidra.program.model.data.FileDataTypeManager;
 import ghidra.util.Msg;
 import ghidra.util.task.Task;
 import ghidra.util.task.TaskMonitor;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * Background task to parse C/C++ files using libclang.
@@ -31,6 +33,8 @@ import ghidra.util.task.TaskMonitor;
  */
 public class ClangParseTask extends Task
 {
+    private static final Logger LOGGER = LogManager.getLogger();
+
     private final GCPPPlugin plugin;
 
     private String[] filenames;
@@ -105,16 +109,20 @@ public class ClangParseTask extends Task
     @Override
     public void run(TaskMonitor monitor)
     {
+        LOGGER.info("Starting clang parse task: {} source file(s)", filenames != null ? filenames.length : 0);
+
         FileDataTypeManager fileDtMgr = null;
 
         if (dataFile != null)
         {
             try
             {
+                LOGGER.debug("Creating archive file: {}", dataFile.getAbsolutePath());
                 fileDtMgr = FileDataTypeManager.createFileArchive(dataFile, languageId, compilerSpecId);
             }
             catch (IOException e)
             {
+                LOGGER.error("Failed to create archive: {}", dataFile.getAbsolutePath(), e);
                 showError("Archive Failure", "Failed to create archive: " + e.getMessage());
                 return;
             }
@@ -136,6 +144,7 @@ public class ClangParseTask extends Task
                     compSpec = lcsPair.compilerSpecID.getIdAsString();
             }
 
+            LOGGER.debug("Parse target: {}, language={}, compiler={}", getParseDestination(dtMgr), langId, compSpec);
             String diagnostics = plugin.parseWithClang(filenames, includePaths, options, dtMgr, langId, compSpec, openArchives, monitor);
 
             if (fileDtMgr != null && dtMgr.getDataTypeCount(true) != 0)
@@ -143,11 +152,13 @@ public class ClangParseTask extends Task
 
             int added = dtMgr.getDataTypeCount(true) - initialDtCount;
             String destination = getParseDestination(dtMgr);
+            LOGGER.info("Parse completed successfully: {} data types added to {}", added, destination);
             showSuccess(added, destination, diagnostics);
         }
         catch (Exception e)
         {
             int added = dtMgr.getDataTypeCount(true) - initialDtCount;
+            LOGGER.error("Parse failed ({} types added before failure)", added, e);
             String countMsg = added > 0 ? added + " data types added before failure.\n\n" : "";
             showError("Clang Parse Failed", countMsg + e.getMessage());
         }
@@ -157,8 +168,10 @@ public class ClangParseTask extends Task
             {
                 boolean empty = fileDtMgr.getDataTypeCount(true) == 0;
                 fileDtMgr.close();
-                if (empty)
+                if (empty) {
+                    LOGGER.debug("Deleting empty archive: {}", dataFile.getAbsolutePath());
                     dataFile.delete();
+                }
             }
         }
     }

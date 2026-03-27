@@ -57,7 +57,7 @@ import java.util.List;
 )
 public class GCPPPlugin extends ProgramPlugin
 {
-    public static final Logger LOGGER = LogManager.getLogger();
+    private static final Logger LOGGER = LogManager.getLogger();
 
     static final String DESCRIPTION =
         "Parse C and C++ header files using libclang, extracting data type definitions.";

@@ -4,6 +4,9 @@ import ghidra.program.model.data.CategoryPath;
 import playday3008.gcpp.clang.*;
 import playday3008.gcpp.clang.error.ParseException;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -30,6 +33,7 @@ import java.util.List;
  */
 public class SourceParser {
 
+    private static final Logger LOGGER = LogManager.getLogger();
     private static final String UMBRELLA_FILENAME = "__gcpp_umbrella.hpp";
 
     /**
@@ -101,6 +105,9 @@ public class SourceParser {
             args.add("-D_NTLSA_");
         }
 
+        LOGGER.info("Parsing {} source file(s) with language={}, compiler={}", sourceFiles.length, languageId, compilerSpec);
+        LOGGER.debug("Clang args: {}", args);
+
         List<String> diagnostics = new ArrayList<>();
 
         try (var index = Index.create(true);
@@ -115,17 +122,22 @@ public class SourceParser {
                  .build(index)) {
 
             // Collect only error-level diagnostics (skip warnings/notes)
-            for (int i = 0; i < tu.getNumDiagnostics(); i++) {
+            int totalDiags = tu.getNumDiagnostics();
+            for (int i = 0; i < totalDiags; i++) {
                 try (var d = tu.getDiagnostic(i)) {
                     if (d.severity() >= Diagnostic.SEVERITY_ERROR)
                         diagnostics.add(d.format());
                 }
+            }
+            if (!diagnostics.isEmpty()) {
+                LOGGER.warn("Clang reported {} error(s) out of {} diagnostics", diagnostics.size(), totalDiags);
             }
 
             // Single recursive pass -- Panama upcalls nest freely
             visitDeclarations(tu.cursor(), CategoryPath.ROOT, typePool);
         }
 
+        LOGGER.info("Parse complete: {} error diagnostic(s)", diagnostics.size());
         return diagnostics;
     }
 
@@ -208,7 +220,7 @@ public class SourceParser {
                 }
             }
         } catch (Exception e) {
-            // Fall through to fallback on any error
+            LOGGER.debug("Could not determine category for cursor: {}", e.getMessage());
         }
         return fallback;
     }

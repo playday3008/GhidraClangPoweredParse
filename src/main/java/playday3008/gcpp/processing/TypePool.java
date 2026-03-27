@@ -3,12 +3,16 @@ package playday3008.gcpp.processing;
 import ghidra.program.model.data.*;
 import ghidra.util.data.DataTypeParser;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public class TypePool {
+    private static final Logger LOGGER = LogManager.getLogger();
     private final DataTypeManager[] openArchives;
 
     private final Map<String, ParsedType> parsedTypes = new HashMap<>();
@@ -31,23 +35,28 @@ public class TypePool {
     }
 
     public ResolutionResult resolve() {
+        LOGGER.debug("Starting type resolution for {} parsed types", parsedTypes.size());
         int transaction = this.dtm.startTransaction("Process clang types");
 
         // Pre-register forward declarations for all structs and unions.
         // This allows pointer-to-struct/union dependencies to resolve before
         // the actual type is fully defined — critical for self-referential
         // types (e.g. linked list nodes) and cross-referential struct pointers.
+        int forwardDecls = 0;
         for (ParsedType pt : this.parsedTypes.values()) {
             if (pt instanceof ParsedStructure) {
                 this.dtm.addDataType(
                     new StructureDataType(pt.getCategoryPath(), pt.getName(), 0, dtm),
                     DataTypeConflictHandler.REPLACE_HANDLER);
+                forwardDecls++;
             } else if (pt instanceof ParsedUnion) {
                 this.dtm.addDataType(
                     new UnionDataType(pt.getCategoryPath(), pt.getName(), dtm),
                     DataTypeConflictHandler.REPLACE_HANDLER);
+                forwardDecls++;
             }
         }
+        LOGGER.debug("Registered {} forward declarations", forwardDecls);
 
         Set<ParsedType> outstandingParsedTypes = new HashSet<>(this.parsedTypes.values());
 
@@ -55,8 +64,10 @@ public class TypePool {
         // When no more progress can be made, skip unresolvable types rather than
         // failing entirely — system headers commonly reference types from unparsed
         // headers, function pointers, etc. that can't be resolved.
+        int iteration = 0;
         while (!outstandingParsedTypes.isEmpty()) {
             boolean hasResolved = false;
+            int resolvedThisPass = 0;
 
             for (var it = outstandingParsedTypes.iterator(); it.hasNext(); ) {
                 var parsedType = it.next();
@@ -68,12 +79,17 @@ public class TypePool {
                             this.dtm.addDataType(dt, DataTypeConflictHandler.REPLACE_HANDLER);
                         }
                     } catch (Exception e) {
-                        // Skip types that fail to create (e.g. invalid field types)
+                        LOGGER.warn("Failed to create type '{}': {}", parsedType.getName(), e.getMessage());
                     }
                     it.remove();
                     hasResolved = true;
+                    resolvedThisPass++;
                 }
             }
+
+            iteration++;
+            LOGGER.debug("Resolution pass {}: resolved {} types, {} remaining",
+                iteration, resolvedThisPass, outstandingParsedTypes.size());
 
             // No more progress — remaining types have unresolvable dependencies
             if (!hasResolved)
@@ -88,10 +104,14 @@ public class TypePool {
             unresolvedDependencies = outstandingParsedTypes.stream()
                 .flatMap(parsedType -> this.getUnfulfilledDependencies(parsedType).stream())
                 .collect(Collectors.toSet());
+            LOGGER.warn("{} types could not be resolved due to unfulfilled dependencies: {}",
+                outstandingParsedTypes.size(),
+                outstandingParsedTypes.stream().map(ParsedType::getName).collect(Collectors.joining(", ")));
         }
 
         List<DataType> allTypes = new ArrayList<>();
         this.dtm.getAllDataTypes(allTypes);
+        LOGGER.debug("Type resolution complete: {} types resolved in {} passes", allTypes.size(), iteration);
         return new ResolutionResult(List.copyOf(allTypes), Set.copyOf(unresolvedDependencies));
     }
 

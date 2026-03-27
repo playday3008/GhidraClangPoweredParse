@@ -1,11 +1,15 @@
 package playday3008.gcpp.processing;
 
 import ghidra.program.model.data.*;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
 public class ParsedFunctionType extends ParsedType {
+    private static final Logger LOGGER = LogManager.getLogger();
 
     public record ParamInfo(String name, String typeName) {}
 
@@ -50,7 +54,7 @@ public class ParsedFunctionType extends ParsedType {
             try {
                 funcDef.setCallingConvention(callingConvention);
             } catch (Exception e) {
-                // Ignore invalid calling convention
+                LOGGER.warn("Invalid calling convention '{}' for function '{}': {}", callingConvention, getName(), e.getMessage());
             }
         }
 

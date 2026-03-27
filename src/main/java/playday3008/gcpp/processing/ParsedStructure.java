@@ -1,10 +1,14 @@
 package playday3008.gcpp.processing;
 
 import ghidra.program.model.data.*;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import java.util.List;
 import java.util.stream.Collectors;
 
 public class ParsedStructure extends ParsedType {
+    private static final Logger LOGGER = LogManager.getLogger();
 
     public record FieldInfo(
         String name,
@@ -44,7 +48,8 @@ public class ParsedStructure extends ParsedType {
                     try {
                         struct.addBitField(fieldType, field.bitFieldWidth(), field.name(), null);
                     } catch (InvalidDataTypeException e) {
-                        // Fall back to regular field if bit-field fails
+                        LOGGER.warn("Bit-field failed for '{}.{}' (width={}), falling back to regular field: {}",
+                            getName(), field.name(), field.bitFieldWidth(), e.getMessage());
                         struct.add(fieldType, field.name(), null);
                     }
                 }

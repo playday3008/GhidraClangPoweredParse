@@ -2,6 +2,8 @@ package playday3008.gcpp.processing;
 
 import ghidra.program.model.lang.*;
 import ghidra.program.util.DefaultLanguageService;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -14,6 +16,7 @@ import java.util.List;
  */
 public class ArchitectureMapping
 {
+    private static final Logger LOGGER = LogManager.getLogger();
     /**
      * Maps Ghidra processor / endianness / address-size triples to clang
      * target architecture names used in {@code --target} triples.
@@ -171,13 +174,17 @@ public class ArchitectureMapping
     public static List<String> getClangArgs(String languageId, String compilerSpec)
     {
         ClangArch arch = resolveArch(languageId);
-        if (arch == null)
+        if (arch == null) {
+            LOGGER.warn("No clang architecture mapping for languageId '{}' — returning empty args", languageId);
             return List.of();
+        }
 
         TargetEnvironment env = TargetEnvironment.fromCompilerSpec(compilerSpec);
+        String triple = env.buildTriple(arch.clangArch());
+        LOGGER.debug("Mapped languageId='{}' compilerSpec='{}' -> target={}, env={}", languageId, compilerSpec, triple, env);
 
         List<String> args = new ArrayList<>();
-        args.add("--target=" + env.buildTriple(arch.clangArch()));
+        args.add("--target=" + triple);
         args.addAll(env.extraArgs());
         return args;
     }
@@ -211,26 +218,42 @@ public class ArchitectureMapping
         {
             LanguageService svc = DefaultLanguageService.getLanguageService();
             LanguageDescription desc = svc.getLanguageDescription(new LanguageID(languageId));
-            return ClangArch.find(desc);
+            ClangArch arch = ClangArch.find(desc);
+            if (arch != null) {
+                LOGGER.debug("Resolved '{}' via LanguageService -> {}", languageId, arch);
+            } else {
+                LOGGER.debug("LanguageService found '{}' but no ClangArch mapping for processor={}, endian={}, size={}",
+                    languageId, desc.getProcessor(), desc.getEndian(), desc.getSize());
+            }
+            return arch;
         }
-        catch (Exception ignored)
+        catch (Exception e)
         {
-            // Service not initialized or language not found -- fall through
+            LOGGER.debug("LanguageService lookup failed for '{}': {}, falling back to manual parsing", languageId, e.getMessage());
         }
 
         // Fallback: parse "processor:endian:size[:variant]" manually
         String[] parts = languageId.split(":");
-        if (parts.length < 3)
+        if (parts.length < 3) {
+            LOGGER.warn("Cannot parse languageId '{}': expected at least 3 colon-separated parts", languageId);
             return null;
+        }
 
         try
         {
             Endian endian = Endian.toEndian(parts[1]);
             int size = Integer.parseInt(parts[2]);
-            return ClangArch.find(parts[0], endian, size);
+            ClangArch arch = ClangArch.find(parts[0], endian, size);
+            if (arch != null) {
+                LOGGER.debug("Resolved '{}' via manual parsing -> {}", languageId, arch);
+            } else {
+                LOGGER.warn("No ClangArch mapping for processor='{}', endian={}, size={}", parts[0], endian, size);
+            }
+            return arch;
         }
-        catch (IllegalArgumentException ignored)
+        catch (IllegalArgumentException e)
         {
+            LOGGER.warn("Failed to parse languageId '{}': {}", languageId, e.getMessage());
             return null;
         }
     }

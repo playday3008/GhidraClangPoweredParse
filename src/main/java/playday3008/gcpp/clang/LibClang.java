@@ -12,6 +12,8 @@ import java.util.List;
 
 import ghidra.framework.Application;
 import ghidra.framework.Platform;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * Static utility class providing all native interactions with libclang via Panama FFI.
@@ -19,6 +21,8 @@ import ghidra.framework.Platform;
  */
 public final class LibClang {
     private LibClang() {}
+
+    private static final Logger LOGGER = LogManager.getLogger();
 
     // ========================================================================
     // Struct Layouts
@@ -83,13 +87,17 @@ public final class LibClang {
         try {
             File osFile = Application.getOSFile(
                 "libclang" + Platform.CURRENT_PLATFORM.getLibraryExtension());
-            return SymbolLookup.libraryLookup(osFile.toPath(), Arena.global());
-        } catch (Exception ignored) {
-            // Bundled library not found or not loadable — fall through to system search
+            LOGGER.debug("Trying bundled libclang: {}", osFile.getAbsolutePath());
+            SymbolLookup lookup = SymbolLookup.libraryLookup(osFile.toPath(), Arena.global());
+            LOGGER.info("Loaded bundled libclang from {}", osFile.getAbsolutePath());
+            return lookup;
+        } catch (Exception e) {
+            LOGGER.debug("Bundled libclang not available: {}", e.getMessage());
         }
 
         // Fall back to system-installed libclang
         String osName = System.getProperty("os.name", "").toLowerCase();
+        LOGGER.debug("Searching for system-installed libclang (os.name={})", osName);
 
         if (osName.contains("win")) {
             return loadWindowsLibClang();
@@ -105,8 +113,13 @@ public final class LibClang {
         String[] names = { "libclang", "libclang.dll" };
         for (String name : names) {
             try {
-                return SymbolLookup.libraryLookup(name, Arena.global());
-            } catch (IllegalArgumentException | UnsatisfiedLinkError ignored) {}
+                LOGGER.debug("Trying Windows libclang: {}", name);
+                SymbolLookup lookup = SymbolLookup.libraryLookup(name, Arena.global());
+                LOGGER.info("Loaded libclang from system PATH: {}", name);
+                return lookup;
+            } catch (IllegalArgumentException | UnsatisfiedLinkError e) {
+                LOGGER.debug("Failed to load {}: {}", name, e.getMessage());
+            }
         }
         throw new RuntimeException(
             "Could not load libclang on Windows. Ensure libclang.dll is on the system PATH.");
@@ -117,8 +130,13 @@ public final class LibClang {
         String xcodeClang = "/Applications/Xcode.app/Contents/Developer/Toolchains/" +
             "XcodeDefault.xctoolchain/usr/lib/libclang.dylib";
         try {
-            return SymbolLookup.libraryLookup(xcodeClang, Arena.global());
-        } catch (IllegalArgumentException | UnsatisfiedLinkError ignored) {}
+            LOGGER.debug("Trying Xcode libclang: {}", xcodeClang);
+            SymbolLookup lookup = SymbolLookup.libraryLookup(xcodeClang, Arena.global());
+            LOGGER.info("Loaded libclang from Xcode: {}", xcodeClang);
+            return lookup;
+        } catch (IllegalArgumentException | UnsatisfiedLinkError e) {
+            LOGGER.debug("Xcode libclang not available: {}", e.getMessage());
+        }
 
         // Try Homebrew LLVM
         String[] brewPaths = {
@@ -127,14 +145,24 @@ public final class LibClang {
         };
         for (String path : brewPaths) {
             try {
-                return SymbolLookup.libraryLookup(path, Arena.global());
-            } catch (IllegalArgumentException | UnsatisfiedLinkError ignored) {}
+                LOGGER.debug("Trying Homebrew libclang: {}", path);
+                SymbolLookup lookup = SymbolLookup.libraryLookup(path, Arena.global());
+                LOGGER.info("Loaded libclang from Homebrew: {}", path);
+                return lookup;
+            } catch (IllegalArgumentException | UnsatisfiedLinkError e) {
+                LOGGER.debug("Failed to load {}: {}", path, e.getMessage());
+            }
         }
 
         // Try system library name
         try {
-            return SymbolLookup.libraryLookup("libclang.dylib", Arena.global());
-        } catch (IllegalArgumentException | UnsatisfiedLinkError ignored) {}
+            LOGGER.debug("Trying system libclang.dylib");
+            SymbolLookup lookup = SymbolLookup.libraryLookup("libclang.dylib", Arena.global());
+            LOGGER.info("Loaded system libclang.dylib");
+            return lookup;
+        } catch (IllegalArgumentException | UnsatisfiedLinkError e) {
+            LOGGER.debug("System libclang.dylib not available: {}", e.getMessage());
+        }
 
         throw new RuntimeException(
             "Could not load libclang on macOS. Install Xcode or LLVM (e.g. via Homebrew).");
@@ -149,8 +177,13 @@ public final class LibClang {
         };
         for (String name : names) {
             try {
-                return SymbolLookup.libraryLookup(name, Arena.global());
-            } catch (IllegalArgumentException | UnsatisfiedLinkError ignored) {}
+                LOGGER.debug("Trying Linux libclang: {}", name);
+                SymbolLookup lookup = SymbolLookup.libraryLookup(name, Arena.global());
+                LOGGER.info("Loaded libclang: {}", name);
+                return lookup;
+            } catch (IllegalArgumentException | UnsatisfiedLinkError e) {
+                LOGGER.debug("Failed to load {}: {}", name, e.getMessage());
+            }
         }
 
         // Search /usr/lib/llvm-*/lib/ directories
@@ -177,7 +210,9 @@ public final class LibClang {
                     }
                 }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            LOGGER.debug("Error scanning /usr/lib/llvm-*/lib/: {}", e.getMessage());
+        }
 
         // Also search /usr/lib64 and /usr/lib/x86_64-linux-gnu
         String[] extraDirs = { "/usr/lib64", "/usr/lib/x86_64-linux-gnu" };
@@ -196,16 +231,24 @@ public final class LibClang {
                         }
                     }
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                LOGGER.debug("Error scanning {}: {}", dir, e.getMessage());
+            }
         }
 
         // Sort by name descending to prefer higher versions
         candidates.sort(Comparator.comparing(Path::toString).reversed());
+        LOGGER.debug("Found {} libclang candidates on Linux: {}", candidates.size(), candidates);
 
         for (Path candidate : candidates) {
             try {
-                return SymbolLookup.libraryLookup(candidate, Arena.global());
-            } catch (IllegalArgumentException | UnsatisfiedLinkError ignored) {}
+                LOGGER.debug("Trying candidate: {}", candidate);
+                SymbolLookup lookup = SymbolLookup.libraryLookup(candidate, Arena.global());
+                LOGGER.info("Loaded libclang from {}", candidate);
+                return lookup;
+            } catch (IllegalArgumentException | UnsatisfiedLinkError e) {
+                LOGGER.debug("Failed to load {}: {}", candidate, e.getMessage());
+            }
         }
 
         throw new RuntimeException(
