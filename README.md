@@ -15,14 +15,39 @@ A [Ghidra](https://ghidra-sre.org/) extension that parses C/C++ headers using **
 ## Requirements
 
 - **Ghidra** 12+
-- **JDK 21 or 22** (Panama FFI is preview in 21, stable in 22+)
+- **JDK 21+** (JDK 22+ recommended — Panama FFI is preview in 21, stable in 22+)
+
+## Known Issue: JIT Crash with Panama FFI
+
+The plugin uses Panama FFI upcalls (native-to-Java callbacks) for libclang's AST visitor pattern. On all tested JDK versions and vendors (Temurin 21, Red Hat OpenJDK 25), JIT-compiled code (both C1 and C2) crashes with `SIGSEGV` when running inside or after Panama upcall callbacks. The only reliable workaround is **interpreter mode**:
+
+```properties
+# Add to <ghidra_install>/support/launch.properties
+VMARGS=-Xint
+```
+
+This disables JIT compilation entirely. Ghidra will be slower to start and during heavy operations, but normal usage is largely unaffected since the bottleneck during parsing is libclang, not Java.
+
+**If you can help diagnose or fix this, contributions are very welcome!** The core issue is that any JIT-compiled method (even basic JDK classes like `Matcher.reset()` or `UnixPath.initOffsets()`) crashes with `SIGSEGV (SI_TKILL)` when executed on a thread that has active Panama upcall frames. Things worth investigating:
+
+- Whether other JDK vendors/builds (Oracle JDK, Amazon Corretto, GraalVM) exhibit the same behavior
+- Whether the upcall descriptor or callback signature can be restructured to avoid the issue
+- Whether Ghidra's custom classloader (`ghidra.GhidraClassLoader`) interacts badly with Panama upcalls under JIT
+- Upstream OpenJDK bug reports related to Panama upcalls and JIT compilation
 
 ## Installation
 
 1. Download a release ZIP (or [build from source](#building-from-source))
 2. In Ghidra: **File > Install Extensions...** > click the **+** icon > select the ZIP
 3. Restart Ghidra
-4. If using JDK 21, enable preview features: edit `<ghidra_install>/support/launch.properties` and add `--enable-preview` to the `VMARGS` line
+4. Edit `<ghidra_install>/support/launch.properties` and add the following lines:
+   ```properties
+   VMARGS=-Xint
+   ```
+   If using JDK 21, also add:
+   ```properties
+   VMARGS=--enable-preview
+   ```
 5. Open a tool (e.g. CodeBrowser), go to **File > Configure** > click **Configure** under **Ghidra Code** > enable the **GCPPPlugin (Clang C/C++ Parser)** plugin
 
 ## Usage
@@ -40,7 +65,9 @@ A [Ghidra](https://ghidra-sre.org/) extension that parses C/C++ headers using **
 | Variable | Required | Description |
 | --- | --- | --- |
 | `GHIDRA_INSTALL_DIR` | Yes | Path to a Ghidra installation |
-| `JAVA_HOME` | Maybe | Path to JDK 21 or 22 (if system default differs) |
+| `JAVA_HOME` | Maybe | Path to JDK 21+ (if system default differs) |
+
+JDK 21 builds with `--enable-preview` (Panama FFI is preview). JDK 22+ builds without it (Panama is stable). The build auto-detects the JDK version.
 
 ### Build
 
