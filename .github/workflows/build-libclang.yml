@@ -69,11 +69,20 @@ jobs:
     name: ${{ matrix.platform }}
 
     steps:
+      - name: Cache libclang binary
+        id: cache-libclang
+        uses: actions/cache@v5
+        with:
+          path: ${{ matrix.lib_dir }}/${{ matrix.lib_name }}
+          key: libclang-${{ matrix.platform }}-${{ env.LLVM_VERSION }}
+
       - name: Clone LLVM source
+        if: steps.cache-libclang.outputs.cache-hit != 'true'
         shell: bash
         run: git clone --depth 1 --branch "llvmorg-${LLVM_VERSION}" https://github.com/llvm/llvm-project.git llvm-project
 
       - name: Configure libclang
+        if: steps.cache-libclang.outputs.cache-hit != 'true'
         shell: bash
         run: |
           cmake -G Ninja \
@@ -102,13 +111,18 @@ jobs:
             ${{ matrix.cmake_extra }}
 
       - name: Build libclang
+        if: steps.cache-libclang.outputs.cache-hit != 'true'
         shell: bash
         run: cmake --build build --target libclang
 
       - name: Strip library (Unix)
-        if: matrix.strip_cmd != ''
+        if: steps.cache-libclang.outputs.cache-hit != 'true' && matrix.strip_cmd != ''
         shell: bash
         run: ${{ matrix.strip_cmd }} ${{ matrix.lib_dir }}/${{ matrix.lib_name }}
+
+      - name: Ad-hoc sign (macOS)
+        if: steps.cache-libclang.outputs.cache-hit != 'true' && startsWith(matrix.os, 'macos')
+        run: codesign --force --sign - ${{ matrix.lib_dir }}/${{ matrix.lib_name }}
 
       - name: Verify dependencies (Linux)
         if: startsWith(matrix.os, 'ubuntu')
@@ -136,10 +150,6 @@ jobs:
           llvm-objdump -p ${{ matrix.lib_dir }}/${{ matrix.lib_name }} | grep "DLL Name"
           echo "=== Size ==="
           ls -lh ${{ matrix.lib_dir }}/${{ matrix.lib_name }}
-
-      - name: Ad-hoc sign (macOS)
-        if: startsWith(matrix.os, 'macos')
-        run: codesign --force --sign - ${{ matrix.lib_dir }}/${{ matrix.lib_name }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
