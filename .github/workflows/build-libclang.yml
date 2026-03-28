@@ -73,7 +73,7 @@ jobs:
         id: cache-libclang
         uses: actions/cache@v5
         with:
-          path: ${{ matrix.lib_dir }}/${{ matrix.lib_name }}
+          path: ${{ matrix.lib_dir }}/libclang*
           key: libclang-${{ matrix.platform }}-${{ env.LLVM_VERSION }}
 
       - name: Clone LLVM source
