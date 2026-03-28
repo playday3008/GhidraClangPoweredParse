@@ -52,6 +52,7 @@ jobs:
               echo "::warning::No libclang artifact for ${platform}"
             fi
           done
+          rm -rf libclang-artifacts
 
       - name: Determine Ghidra version
         id: ghidra
