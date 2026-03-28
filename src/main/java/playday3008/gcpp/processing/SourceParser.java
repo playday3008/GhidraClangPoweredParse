@@ -264,6 +264,8 @@ public class SourceParser {
 
         List<ParsedStructure.FieldInfo> fields = new ArrayList<>();
         boolean[] packed = {false};
+        List<String[]> baseClasses = new ArrayList<>(); // [fieldName, typeName]
+        List<ParsedVtable.VtableEntry> virtualMethods = new ArrayList<>();
 
         structCursor.visitChildren((cursor, parent) -> {
             CursorKind kind = cursor.kind();
@@ -301,12 +303,70 @@ public class SourceParser {
                     ));
                 }
                 case PACKED_ATTR -> packed[0] = true;
+
+                // C++ base classes — embedded as the first fields in the struct
+                case C_X_X_BASE_SPECIFIER -> {
+                    Type baseType = cursor.type();
+                    String baseTypeName = baseType.spelling();
+                    String baseDeclName = baseType.declaration().spelling();
+                    if (baseTypeName != null && !baseTypeName.isEmpty()) {
+                        String fieldName = (baseDeclName != null && !baseDeclName.isEmpty())
+                            ? "super_" + baseDeclName : "super_" + baseTypeName;
+                        baseClasses.add(new String[]{fieldName, baseTypeName});
+                    }
+                }
+
+                // C++ methods — virtual ones go to vtable, all get registered as function defs
+                case C_X_X_METHOD -> {
+                    if (cursor.isVirtualMethod()) {
+                        virtualMethods.add(extractVtableEntry(cursor, name));
+                    }
+                    parseMethodAsFunction(pool, cursor, name, category);
+                }
+
+                // Constructors — registered as function definitions with this* param
+                case CONSTRUCTOR -> {
+                    parseMethodAsFunction(pool, cursor, name, category);
+                }
+
+                // Destructors — virtual ones also go to vtable
+                case DESTRUCTOR -> {
+                    if (cursor.isVirtualMethod()) {
+                        virtualMethods.add(extractVtableEntry(cursor, name));
+                    }
+                    parseMethodAsFunction(pool, cursor, name, category);
+                }
+
+                // Nested type declarations within classes
+                case STRUCT_DECL, CLASS_DECL -> parseStruct(pool, cursor, category);
+                case UNION_DECL -> parseUnion(pool, cursor, category);
+                case ENUM_DECL -> parseEnum(pool, cursor, category);
+                case TYPEDEF_DECL, TYPE_ALIAS_DECL -> parseTypedef(pool, cursor, category);
+
                 default -> {}
             }
             return Cursor.ChildVisitResult.CONTINUE;
         });
 
-        pool.addParsedType(new ParsedStructure(name, fields, packed[0], 0, category));
+        // Build final field list: vptr first, then base classes, then regular fields
+        List<ParsedStructure.FieldInfo> allFields = new ArrayList<>();
+
+        if (!virtualMethods.isEmpty()) {
+            String vtableName = name + "_vtable";
+            pool.addParsedType(new ParsedVtable(vtableName, virtualMethods, name, category));
+            allFields.add(new ParsedStructure.FieldInfo(
+                "vptr", vtableName + " *", false, 0, false, null));
+            LOGGER.debug("Class '{}': created vtable with {} virtual method(s)", name, virtualMethods.size());
+        }
+
+        for (String[] base : baseClasses) {
+            allFields.add(new ParsedStructure.FieldInfo(
+                base[0], base[1], false, 0, false, null));
+        }
+
+        allFields.addAll(fields);
+
+        pool.addParsedType(new ParsedStructure(name, allFields, packed[0], 0, category));
     }
 
     private void parseUnion(TypePool pool, Cursor unionCursor, CategoryPath category) {
@@ -379,6 +439,73 @@ public class SourceParser {
         String ccName = (cc != null) ? cc.getGhidraName() : null;
 
         pool.addParsedType(new ParsedFunctionType(name, returnTypeName, params,
+            isVariadic, ccName, category));
+    }
+
+    // ========================================================================
+    // C++ method helpers
+    // ========================================================================
+
+    /**
+     * Extract a vtable entry from a virtual method or virtual destructor cursor.
+     * The entry includes an explicit {@code this} pointer as the first parameter.
+     */
+    private ParsedVtable.VtableEntry extractVtableEntry(Cursor methodCursor, String className) {
+        String methodName = methodCursor.spelling();
+        Type methodType = methodCursor.type();
+
+        String returnTypeName = methodType.resultType().spelling();
+
+        // Build parameter list with explicit 'this' pointer
+        List<ParsedFunctionType.ParamInfo> params = new ArrayList<>();
+        params.add(new ParsedFunctionType.ParamInfo("this", className + " *"));
+
+        int numArgs = methodType.numArgTypes();
+        for (int i = 0; i < numArgs; i++) {
+            String paramName = getParamName(methodCursor, i);
+            params.add(new ParsedFunctionType.ParamInfo(paramName, methodType.argType(i).spelling()));
+        }
+
+        boolean isVariadic = methodType.isFunctionVariadic();
+        CallingConvention cc = methodType.callingConvention();
+        String ccName = (cc != null) ? cc.getGhidraName() : null;
+
+        return new ParsedVtable.VtableEntry(methodName, returnTypeName, params, isVariadic, ccName);
+    }
+
+    /**
+     * Register a C++ method, constructor, or destructor as a {@link ParsedFunctionType}
+     * in the pool. Non-static methods get an explicit {@code this} pointer as the first
+     * parameter. The function is named {@code ClassName::methodName}.
+     */
+    private void parseMethodAsFunction(TypePool pool, Cursor methodCursor,
+                                       String className, CategoryPath category) {
+        String methodName = methodCursor.spelling();
+        if (methodName == null || methodName.isEmpty())
+            return;
+
+        Type methodType = methodCursor.type();
+        String returnTypeName = methodType.resultType().spelling();
+
+        List<ParsedFunctionType.ParamInfo> params = new ArrayList<>();
+
+        // Add implicit 'this' pointer for non-static methods
+        if (!methodCursor.isStaticMethod()) {
+            params.add(new ParsedFunctionType.ParamInfo("this", className + " *"));
+        }
+
+        int numArgs = methodType.numArgTypes();
+        for (int i = 0; i < numArgs; i++) {
+            String paramName = getParamName(methodCursor, i);
+            params.add(new ParsedFunctionType.ParamInfo(paramName, methodType.argType(i).spelling()));
+        }
+
+        boolean isVariadic = methodType.isFunctionVariadic();
+        CallingConvention cc = methodType.callingConvention();
+        String ccName = (cc != null) ? cc.getGhidraName() : null;
+
+        String fullName = className + "::" + methodName;
+        pool.addParsedType(new ParsedFunctionType(fullName, returnTypeName, params,
             isVariadic, ccName, category));
     }
 

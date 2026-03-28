@@ -361,6 +361,18 @@ public final class LibClang {
     private static final MethodHandle CLANG_IS_DECLARATION = downcall("clang_isDeclaration",
         FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
 
+    private static final MethodHandle CLANG_CXX_METHOD_IS_VIRTUAL = downcall("clang_CXXMethod_isVirtual",
+        FunctionDescriptor.of(ValueLayout.JAVA_INT, CX_CURSOR));
+
+    private static final MethodHandle CLANG_CXX_METHOD_IS_PURE_VIRTUAL = downcall("clang_CXXMethod_isPureVirtual",
+        FunctionDescriptor.of(ValueLayout.JAVA_INT, CX_CURSOR));
+
+    private static final MethodHandle CLANG_CXX_METHOD_IS_STATIC = downcall("clang_CXXMethod_isStatic",
+        FunctionDescriptor.of(ValueLayout.JAVA_INT, CX_CURSOR));
+
+    private static final MethodHandle CLANG_IS_VIRTUAL_BASE = downcall("clang_isVirtualBase",
+        FunctionDescriptor.of(ValueLayout.JAVA_INT, CX_CURSOR));
+
     // --- Type operations ---
 
     private static final MethodHandle CLANG_GET_TYPE_SPELLING = downcall("clang_getTypeSpelling",
@@ -690,6 +702,38 @@ public final class LibClang {
             return (int) CLANG_IS_DECLARATION.invokeExact(cursorKind);
         } catch (Throwable t) {
             throw new RuntimeException("clang_isDeclaration failed", t);
+        }
+    }
+
+    public static int cxxMethodIsVirtual(MemorySegment cursor) {
+        try {
+            return (int) CLANG_CXX_METHOD_IS_VIRTUAL.invokeExact(cursor);
+        } catch (Throwable t) {
+            throw new RuntimeException("clang_CXXMethod_isVirtual failed", t);
+        }
+    }
+
+    public static int cxxMethodIsPureVirtual(MemorySegment cursor) {
+        try {
+            return (int) CLANG_CXX_METHOD_IS_PURE_VIRTUAL.invokeExact(cursor);
+        } catch (Throwable t) {
+            throw new RuntimeException("clang_CXXMethod_isPureVirtual failed", t);
+        }
+    }
+
+    public static int cxxMethodIsStatic(MemorySegment cursor) {
+        try {
+            return (int) CLANG_CXX_METHOD_IS_STATIC.invokeExact(cursor);
+        } catch (Throwable t) {
+            throw new RuntimeException("clang_CXXMethod_isStatic failed", t);
+        }
+    }
+
+    public static int isVirtualBase(MemorySegment cursor) {
+        try {
+            return (int) CLANG_IS_VIRTUAL_BASE.invokeExact(cursor);
+        } catch (Throwable t) {
+            throw new RuntimeException("clang_isVirtualBase failed", t);
         }
     }
 

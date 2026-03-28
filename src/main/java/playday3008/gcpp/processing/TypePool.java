@@ -54,6 +54,11 @@ public class TypePool {
                     new UnionDataType(pt.getCategoryPath(), pt.getName(), dtm),
                     DataTypeConflictHandler.REPLACE_HANDLER);
                 forwardDecls++;
+            } else if (pt instanceof ParsedVtable) {
+                this.dtm.addDataType(
+                    new StructureDataType(pt.getCategoryPath(), pt.getName(), 0, dtm),
+                    DataTypeConflictHandler.REPLACE_HANDLER);
+                forwardDecls++;
             }
         }
         LOGGER.debug("Registered {} forward declarations", forwardDecls);

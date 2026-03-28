@@ -179,6 +179,34 @@ public final class Cursor {
         return LibClang.cursorIsAnonymousRecordDecl(segment) != 0;
     }
 
+    /**
+     * Returns whether this C++ method is declared virtual.
+     */
+    public boolean isVirtualMethod() {
+        return LibClang.cxxMethodIsVirtual(segment) != 0;
+    }
+
+    /**
+     * Returns whether this C++ method is declared pure virtual (= 0).
+     */
+    public boolean isPureVirtualMethod() {
+        return LibClang.cxxMethodIsPureVirtual(segment) != 0;
+    }
+
+    /**
+     * Returns whether this C++ method is declared static.
+     */
+    public boolean isStaticMethod() {
+        return LibClang.cxxMethodIsStatic(segment) != 0;
+    }
+
+    /**
+     * Returns whether this base specifier represents a virtual base class.
+     */
+    public boolean isVirtualBase() {
+        return LibClang.isVirtualBase(segment) != 0;
+    }
+
     // ========================================================================
     // Visitor pattern
     // ========================================================================
